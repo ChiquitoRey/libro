@@ -426,3 +426,12 @@ body.noche .aj-calendario { background: rgba(233,201,143,.07); }
   #panel-elemento .pe-fila.acciones { flex-wrap: wrap; }
 }
 @media (max-width: 1099px) { .pe-pista { display: none; } }
+
+/* Reordenar hojas desde el índice */
+.ind-ayuda { margin: 6px 4px 2px; }
+.ind-lista { display: flex; flex-direction: column; gap: 2px; }
+.ind-fila { display: flex; align-items: center; gap: 2px; border-radius: 10px; background: var(--panel); transition: box-shadow .15s; }
+.ind-fila .ind-item { flex: 1; min-width: 0; }
+.ind-manija { width: 26px; flex: none; text-align: center; color: var(--gris); cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; font-size: 15px; letter-spacing: -3px; padding: 12px 0; }
+.ind-fila.arrastrando-ind { box-shadow: 0 8px 22px rgba(0,0,0,.18); position: relative; z-index: 2; background: color-mix(in srgb, var(--panel) 90%, var(--vino)); }
+.ind-fila.arrastrando-ind .ind-manija { cursor: grabbing; color: var(--vino-2); }
