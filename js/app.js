@@ -1017,20 +1017,83 @@ function pintarPanelLateral() {
 }
 
 function panelIndice() {
-  const items = [h('button', { class: 'ind-item', onclick: () => { S.panel = null; pintarPanelLateral(); irA(0, 'ant'); } }, h('span', { class: 'ind-num' }, '—'), 'Tapa')];
+  const tapa = h('button', { class: 'ind-item', onclick: () => { S.panel = null; pintarPanelLateral(); irA(0, 'ant'); } }, h('span', { class: 'ind-num' }, '—'), 'Tapa');
+  const lista = h('div', { class: 'ind-lista' });
+  const ir = (p) => { S.panel = null; pintarPanelLateral(); irA(pliegoDeHoja(S.paginas.indexOf(p) + 1), 'sig'); };
+  const mover = (p, dir) => {
+    const i = S.paginas.indexOf(p), j = i + dir;
+    if (j < 0 || j >= S.paginas.length) return;
+    const nuevas = [...S.paginas];
+    [nuevas[i], nuevas[j]] = [nuevas[j], nuevas[i]];
+    reordenarHojas(nuevas);
+  };
   S.paginas.forEach((p, i) => {
     const tit = S.elementos.filter(e => e.pagina_id === p.id && e.tipo === 'titulo').sort((a, b) => a.y - b.y)[0];
     const otro = S.elementos.filter(e => e.pagina_id === p.id && e.tipo === 'texto').sort((a, b) => a.y - b.y)[0];
     const nombre = (tit && textoPlano(tit.contenido)) || (otro && textoPlano(otro.contenido).slice(0, 40)) || 'Hoja sin título';
     const fotos = S.elementos.filter(e => e.pagina_id === p.id && e.archivo).length;
-    items.push(h('button', {
-      class: 'ind-item', onclick: () => { S.panel = null; pintarPanelLateral(); irA(pliegoDeHoja(i + 1), 'sig'); },
-    }, h('span', { class: 'ind-num' }, String(i + 1)), h('span', { class: 'ind-nombre' }, nombre),
+    const boton = h('button', { class: 'ind-item', onclick: () => ir(p) },
+      h('span', { class: 'ind-num' }, String(i + 1)), h('span', { class: 'ind-nombre' }, nombre),
       fotos ? h('span', { class: 'ind-extra' }, `${fotos} 📎`) : null,
-      p.oculta && S.esDueno ? h('span', { class: 'ind-extra' }, icono('ojoNo')) : null));
+      p.oculta && S.esDueno ? h('span', { class: 'ind-extra' }, icono('ojoNo')) : null);
+    if (!S.esDueno) { lista.append(boton); return; }
+    const manija = h('span', { class: 'ind-manija', title: 'Arrastrá para cambiar el orden', 'aria-label': 'Mover hoja' }, '⋮⋮');
+    const fila = h('div', { class: 'ind-fila', 'data-id': p.id },
+      manija, boton,
+      h('button', { class: 'mini', title: 'Subir', disabled: i === 0, onclick: () => mover(p, -1) }, icono('arriba')),
+      h('button', { class: 'mini', title: 'Bajar', disabled: i === S.paginas.length - 1, onclick: () => mover(p, 1) }, icono('abajo')));
+    manija.addEventListener('pointerdown', (ev) => arrastrarEnIndice(ev, fila, lista, manija));
+    lista.append(fila);
   });
-  if (S.esDueno) items.push(h('button', { class: 'btn ancho', style: { marginTop: '12px' }, onclick: () => { S.panel = null; pintarPanelLateral(); agregarHoja(); } }, '+ Agregar hoja'));
-  return h('div', { class: 'indice' }, items);
+  const partes = [tapa, lista];
+  if (S.esDueno && S.paginas.length > 1) partes.splice(1, 0, h('p', { class: 'gris chico ind-ayuda' }, 'Para cambiar el orden, arrastrá desde ⋮⋮ o usá las flechitas.'));
+  if (S.esDueno) partes.push(h('button', { class: 'btn ancho', style: { marginTop: '12px' }, onclick: () => { S.panel = null; pintarPanelLateral(); agregarHoja(); } }, '+ Agregar hoja'));
+  return h('div', { class: 'indice' }, partes);
+}
+
+function arrastrarEnIndice(ev, fila, lista, manija) {
+  ev.preventDefault();
+  const puntero = ev.pointerId;
+  fila.classList.add('arrastrando-ind');
+  const cuerpo = fila.closest('.panel-cuerpo');
+  const antes = [...lista.children].map(f => f.dataset.id).join();
+  const mover = (m) => {
+    if (m.pointerId !== puntero) return;
+    m.preventDefault();
+    const otras = [...lista.querySelectorAll('.ind-fila:not(.arrastrando-ind)')];
+    const destino = otras.find(o => { const r = o.getBoundingClientRect(); return m.clientY < r.top + r.height / 2; });
+    if (destino) { if (destino !== fila.nextElementSibling) lista.insertBefore(fila, destino); }
+    else if (lista.lastElementChild !== fila) lista.append(fila);
+    if (cuerpo) {
+      const r = cuerpo.getBoundingClientRect();
+      if (m.clientY < r.top + 40) cuerpo.scrollTop -= 12; else if (m.clientY > r.bottom - 40) cuerpo.scrollTop += 12;
+    }
+  };
+  const fin = () => {
+    document.removeEventListener('pointermove', mover);
+    document.removeEventListener('pointerup', fin);
+    document.removeEventListener('pointercancel', fin);
+    fila.classList.remove('arrastrando-ind');
+    const ids = [...lista.children].map(f => f.dataset.id);
+    if (ids.join() !== antes) reordenarHojas(ids.map(id => S.paginas.find(p => p.id === id)));
+  };
+  document.addEventListener('pointermove', mover, { passive: false });
+  document.addEventListener('pointerup', fin);
+  document.addEventListener('pointercancel', fin);
+}
+
+async function reordenarHojas(nuevas) {
+  const vista = pliegos()[S.pliego]?.[0] > 0 ? S.paginas[pliegos()[S.pliego][0] - 1] : null;
+  const cambiadas = [];
+  nuevas.forEach((p, i) => { if (p.orden !== i + 1) { p.orden = i + 1; cambiadas.push(p); } });
+  S.paginas = nuevas;
+  if (vista) S.pliego = pliegoDeHoja(S.paginas.indexOf(vista) + 1);
+  pintarLibro();
+  pintarPanelLateral();
+  try {
+    await Promise.all(cambiadas.map(p => S.be.editarPagina(p.id, { orden: p.orden })));
+    toast('Orden de las hojas guardado');
+  } catch (e) { fallo(e); }
 }
 
 function panelCuenta() {
