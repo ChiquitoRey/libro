@@ -1,0 +1,50 @@
+# Despierta la base de datos de Supabase cada 3 días para que el plan
+# gratis no pause el proyecto (lo pausa a los 7 días sin uso).
+# También anota la fecha en "ultimo-ping.txt", así el repositorio tiene
+# actividad y GitHub no apaga esta tarea automática.
+#
+# Necesita dos "secrets" en GitHub (Settings → Secrets and variables → Actions):
+#   SUPABASE_URL  y  SUPABASE_KEY   (los mismos que pusiste en js/config.js)
+
+name: Mantener activo Supabase
+
+on:
+  schedule:
+    - cron: "17 13 */3 * *"   # cada 3 días, 10:17 de Argentina
+  workflow_dispatch:           # botón "Run workflow" para probarlo a mano
+
+permissions:
+  contents: write
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Despertar la base de datos
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_KEY" ]; then
+            echo "Faltan los secrets SUPABASE_URL y SUPABASE_KEY"; exit 1
+          fi
+          for intento in 1 2 3; do
+            respuesta=$(curl -sS -w "\n%{http_code}" -X POST "${SUPABASE_URL%/}/rest/v1/rpc/ping" \
+              -H "apikey: $SUPABASE_KEY" -H "Authorization: Bearer $SUPABASE_KEY" \
+              -H "Content-Type: application/json" -d '{}') || true
+            codigo=$(echo "$respuesta" | tail -n1)
+            echo "Intento $intento → HTTP $codigo: $(echo "$respuesta" | head -n1)"
+            [ "$codigo" = "200" ] && exit 0
+            sleep 20
+          done
+          exit 1
+
+      - uses: actions/checkout@v4
+      - name: Registrar actividad en el repositorio
+        run: |
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > ultimo-ping.txt
+          git config user.name "despertador"
+          git config user.email "despertador@users.noreply.github.com"
+          git add ultimo-ping.txt
+          git commit -m "Despertar Supabase" || echo "Sin cambios"
+          git push
